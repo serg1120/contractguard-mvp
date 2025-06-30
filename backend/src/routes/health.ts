@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
-import config from '../config';
+import { config } from '../config';
 
 const router = Router();
 

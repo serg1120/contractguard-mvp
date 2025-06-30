@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/node';
-import { ProfilingIntegration } from '@sentry/profiling-node';
-import config from '../config';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
+import { config } from '../config';
 import { appLogger } from './logger';
 
 // Initialize Sentry only if DSN is provided
@@ -18,11 +18,11 @@ export const initializeSentry = (app: any) => {
       environment: config.nodeEnv,
       integrations: [
         // Enable HTTP calls tracing
-        new Sentry.Integrations.Http({ tracing: true }),
+        Sentry.httpIntegration({ tracing: true }),
         // Enable Express.js middleware tracing
-        new Sentry.Integrations.Express({ app }),
+        Sentry.expressIntegration({ app }),
         // Enable profiling
-        new ProfilingIntegration(),
+        nodeProfilingIntegration(),
       ],
       // Performance Monitoring
       tracesSampleRate: config.nodeEnv === 'production' ? 0.1 : 1.0,
@@ -84,14 +84,9 @@ export const getSentryMiddleware = () => {
   }
 
   return {
-    requestHandler: Sentry.Handlers.requestHandler(),
-    tracingHandler: Sentry.Handlers.tracingHandler(),
-    errorHandler: Sentry.Handlers.errorHandler({
-      shouldHandleError(error) {
-        // Capture 4xx and 5xx errors
-        return error.status >= 400;
-      },
-    }),
+    requestHandler: Sentry.setupExpressErrorHandler,
+    tracingHandler: (req: any, res: any, next: any) => next(),
+    errorHandler: Sentry.setupExpressErrorHandler,
   };
 };
 
@@ -118,12 +113,7 @@ export class ErrorReporter {
   static captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info', context?: any): void {
     try {
       if (process.env.SENTRY_DSN && !process.env.SENTRY_DSN.includes('your-sentry-dsn')) {
-        Sentry.captureMessage(message, level as Sentry.SeverityLevel, {
-          tags: {
-            component: 'backend',
-          },
-          extra: context,
-        });
+        Sentry.captureMessage(message, level as any);
       }
       
       // Always log to local logger
@@ -172,7 +162,7 @@ export class ErrorReporter {
   static startTransaction(name: string, operation: string): any {
     try {
       if (process.env.SENTRY_DSN && !process.env.SENTRY_DSN.includes('your-sentry-dsn')) {
-        return Sentry.startTransaction({ name, op: operation });
+        return Sentry.startSpan({ name, op: operation }, () => {});
       }
       return null;
     } catch (error) {

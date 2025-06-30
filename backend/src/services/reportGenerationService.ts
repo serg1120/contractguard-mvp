@@ -77,7 +77,7 @@ export class ReportGenerationService {
       await browser.close();
       
       console.log('PDF report generated successfully');
-      return pdfBuffer;
+      return Buffer.from(pdfBuffer);
 
     } catch (error) {
       console.error('Error generating PDF report:', error);
