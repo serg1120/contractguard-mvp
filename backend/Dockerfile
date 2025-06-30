@@ -21,17 +21,17 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 # Development stage
 FROM base AS development
-COPY package*.json ./
+COPY backend/package*.json ./
 RUN npm ci
-COPY . .
+COPY backend/ .
 EXPOSE 5000
 CMD ["npm", "run", "dev"]
 
 # Build stage
 FROM base AS build
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
-COPY . .
+COPY backend/package*.json ./
+RUN npm ci && npm cache clean --force
+COPY backend/ .
 RUN npm run build
 
 # Production stage
@@ -60,10 +60,10 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     NODE_ENV=production
 
 # Copy package files
-COPY package*.json ./
+COPY backend/package*.json ./
 
 # Install production dependencies
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy built application
 COPY --from=build --chown=contractguard:nodejs /app/dist ./dist
@@ -82,7 +82,7 @@ EXPOSE 5000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:5000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+    CMD node -e "require('http').get('http://localhost:5000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
 # Start application
 CMD ["node", "dist/index.js"]
