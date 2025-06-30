@@ -31,6 +31,7 @@ export interface FileUploadConfig {
   maxFileSize: number;
   allowedTypes: string[];
   uploadPath: string;
+  path: string; // Alias for uploadPath
 }
 
 export interface RateLimitConfig {
@@ -104,10 +105,12 @@ class ConfigManager {
 
   private loadConfig(): AppConfig {
     const nodeEnv = this.getEnvVar('NODE_ENV', 'development');
+    const uploadPath = this.getEnvVar('UPLOAD_PATH', './uploads');
     const fileUploadConfig = {
       maxFileSize: this.getEnvVarAsNumber('MAX_FILE_SIZE', 10 * 1024 * 1024), // 10MB
       allowedTypes: this.getEnvVar('ALLOWED_FILE_TYPES', 'application/pdf').split(','),
-      uploadPath: this.getEnvVar('UPLOAD_PATH', './uploads')
+      uploadPath: uploadPath,
+      path: uploadPath // Alias
     };
     
     return {

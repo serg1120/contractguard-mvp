@@ -84,9 +84,9 @@ export const getSentryMiddleware = () => {
   }
 
   return {
-    requestHandler: Sentry.setupExpressErrorHandler,
+    requestHandler: (req: any, res: any, next: any) => next(),
     tracingHandler: (req: any, res: any, next: any) => next(),
-    errorHandler: Sentry.setupExpressErrorHandler,
+    errorHandler: (error: any, req: any, res: any, next: any) => next(error),
   };
 };
 

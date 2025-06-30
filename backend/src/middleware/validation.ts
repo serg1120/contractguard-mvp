@@ -124,7 +124,7 @@ export class ValidationMiddleware {
               continue;
             }
             convertedValue = numValue;
-            (req.query as any)[rule.field] = numValue;
+            (req.query as any)[rule.field] = numValue.toString();
           }
           
           // Validate the converted value
@@ -202,6 +202,7 @@ export class ValidationMiddleware {
               continue;
             }
             convertedValue = numValue;
+            (req.params as any)[rule.field] = numValue.toString();
           }
           
           // Apply validations
