@@ -19,9 +19,13 @@ const app = express();
 initializeSentry(app);
 const sentryMiddleware = getSentryMiddleware();
 
-// Sentry request handler (must be first)
-app.use(sentryMiddleware.requestHandler);
-app.use(sentryMiddleware.tracingHandler);
+// Sentry middleware (must be first)
+if (sentryMiddleware.requestHandler && typeof sentryMiddleware.requestHandler === 'function') {
+  app.use(sentryMiddleware.requestHandler);
+}
+if (sentryMiddleware.tracingHandler && typeof sentryMiddleware.tracingHandler === 'function') {
+  app.use(sentryMiddleware.tracingHandler);
+}
 
 // Middleware
 app.use(cors({
@@ -57,7 +61,9 @@ app.use('/api/contracts', contractRoutes);
 app.use(notFoundHandler);
 
 // Sentry error handler (must be before other error handlers)
-app.use(sentryMiddleware.errorHandler);
+if (sentryMiddleware.errorHandler && typeof sentryMiddleware.errorHandler === 'function') {
+  app.use(sentryMiddleware.errorHandler);
+}
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

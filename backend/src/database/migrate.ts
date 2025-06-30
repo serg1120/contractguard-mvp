@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import fs from 'fs';
 import path from 'path';
-import config from '../config';
+import { config } from '../config';
 import { appLogger } from '../utils/logger';
 
 interface Migration {

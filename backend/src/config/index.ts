@@ -59,11 +59,13 @@ export interface SecurityConfig {
 
 export interface AppConfig {
   env: string;
+  nodeEnv: string;
   port: number;
   database: DatabaseConfig;
   jwt: JWTConfig;
   openai: OpenAIConfig;
   fileUpload: FileUploadConfig;
+  upload: FileUploadConfig; // Alias for fileUpload
   rateLimit: RateLimitConfig;
   cors: CORSConfig;
   logging: LoggingConfig;
@@ -101,8 +103,16 @@ class ConfigManager {
   }
 
   private loadConfig(): AppConfig {
+    const nodeEnv = this.getEnvVar('NODE_ENV', 'development');
+    const fileUploadConfig = {
+      maxFileSize: this.getEnvVarAsNumber('MAX_FILE_SIZE', 10 * 1024 * 1024), // 10MB
+      allowedTypes: this.getEnvVar('ALLOWED_FILE_TYPES', 'application/pdf').split(','),
+      uploadPath: this.getEnvVar('UPLOAD_PATH', './uploads')
+    };
+    
     return {
-      env: this.getEnvVar('NODE_ENV', 'development'),
+      env: nodeEnv,
+      nodeEnv: nodeEnv,
       port: this.getEnvVarAsNumber('PORT', 5000),
       
       database: {
@@ -128,11 +138,8 @@ class ConfigManager {
         timeout: this.getEnvVarAsNumber('EXTERNAL_SERVICE_TIMEOUT', 30000)
       },
       
-      fileUpload: {
-        maxFileSize: this.getEnvVarAsNumber('MAX_FILE_SIZE', 10 * 1024 * 1024), // 10MB
-        allowedTypes: this.getEnvVar('ALLOWED_FILE_TYPES', 'application/pdf').split(','),
-        uploadPath: this.getEnvVar('UPLOAD_PATH', './uploads')
-      },
+      fileUpload: fileUploadConfig,
+      upload: fileUploadConfig, // Alias
       
       rateLimit: {
         windowMs: this.getEnvVarAsNumber('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000), // 15 minutes

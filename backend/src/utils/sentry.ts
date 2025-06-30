@@ -18,9 +18,9 @@ export const initializeSentry = (app: any) => {
       environment: config.nodeEnv,
       integrations: [
         // Enable HTTP calls tracing
-        Sentry.httpIntegration({ tracing: true }),
+        Sentry.httpIntegration(),
         // Enable Express.js middleware tracing
-        Sentry.expressIntegration({ app }),
+        Sentry.expressIntegration(),
         // Enable profiling
         nodeProfilingIntegration(),
       ],

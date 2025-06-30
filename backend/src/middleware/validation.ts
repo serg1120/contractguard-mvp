@@ -124,7 +124,7 @@ export class ValidationMiddleware {
               continue;
             }
             convertedValue = numValue;
-            req.query[rule.field] = numValue.toString();
+            (req.query as any)[rule.field] = numValue;
           }
           
           // Validate the converted value
@@ -196,11 +196,12 @@ export class ValidationMiddleware {
           // Convert string values to appropriate types
           let convertedValue = value;
           if (rule.type === 'number' && typeof value === 'string') {
-            convertedValue = parseInt(value, 10);
-            if (isNaN(convertedValue as number)) {
+            const numValue = parseInt(value, 10);
+            if (isNaN(numValue)) {
               errors.push(`${rule.field} must be a valid number`);
               continue;
             }
+            convertedValue = numValue;
           }
           
           // Apply validations

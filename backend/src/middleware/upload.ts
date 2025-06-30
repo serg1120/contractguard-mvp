@@ -50,7 +50,7 @@ const upload = multer({
 });
 
 // Error handling middleware for multer errors
-export const handleUploadErrors = (error: any, req: Express.Request, res: Express.Response, next: Express.NextFunction) => {
+export const handleUploadErrors = (error: any, req: any, res: any, next: any) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       const maxSizeMB = Math.round(parseInt(process.env.MAX_FILE_SIZE || '10485760') / 1024 / 1024);

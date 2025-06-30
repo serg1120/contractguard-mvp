@@ -128,12 +128,12 @@ export const errorHandler = (
     errorCode = 'INVALID_JSON';
   }
   // Handle network/connection errors
-  else if (err.code === 'ECONNREFUSED') {
+  else if ((err as any).code === 'ECONNREFUSED') {
     statusCode = 503;
     message = 'External service temporarily unavailable';
     errorCode = 'SERVICE_UNAVAILABLE';
   }
-  else if (err.code === 'ETIMEDOUT') {
+  else if ((err as any).code === 'ETIMEDOUT') {
     statusCode = 504;
     message = 'Request timeout - please try again';
     errorCode = 'TIMEOUT';
