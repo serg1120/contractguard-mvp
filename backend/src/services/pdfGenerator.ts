@@ -1,0 +1,491 @@
+import puppeteer, { Browser, Page, PDFOptions } from 'puppeteer';
+import { logger } from '../utils/logger';
+import path from 'path';
+import fs from 'fs/promises';
+
+interface PDFGeneratorOptions {
+  outputPath?: string;
+  returnBuffer?: boolean;
+  metadata?: {
+    title?: string;
+    author?: string;
+    subject?: string;
+    keywords?: string;
+    creator?: string;
+    producer?: string;
+  };
+  headerTemplate?: string;
+  footerTemplate?: string;
+  displayHeaderFooter?: boolean;
+  margin?: {
+    top?: string;
+    bottom?: string;
+    left?: string;
+    right?: string;
+  };
+}
+
+class PDFGeneratorService {
+  private browser: Browser | null = null;
+  private readonly defaultOptions: PDFOptions = {
+    format: 'A4',
+    printBackground: true,
+    preferCSSPageSize: false,
+    margin: {
+      top: '20mm',
+      bottom: '20mm',
+      left: '15mm',
+      right: '15mm'
+    },
+    displayHeaderFooter: false,
+    headerTemplate: `
+      <div style="font-size: 10px; text-align: center; width: 100%; margin: 0 auto;">
+        <span class="title"></span>
+      </div>
+    `,
+    footerTemplate: `
+      <div style="font-size: 10px; text-align: center; width: 100%; margin: 0 auto;">
+        Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+      </div>
+    `
+  };
+
+  /**
+   * Initialize the Puppeteer browser instance
+   */
+  private async initBrowser(): Promise<void> {
+    try {
+      if (!this.browser) {
+        this.browser = await puppeteer.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-extensions'
+          ],
+          timeout: 30000
+        });
+        logger.info('Puppeteer browser initialized');
+      }
+    } catch (error) {
+      logger.error('Failed to initialize Puppeteer browser:', error);
+      throw new Error('Failed to initialize PDF generator');
+    }
+  }
+
+  /**
+   * Close the browser instance
+   */
+  async closeBrowser(): Promise<void> {
+    if (this.browser) {
+      await this.browser.close();
+      this.browser = null;
+      logger.info('Puppeteer browser closed');
+    }
+  }
+
+  /**
+   * Generate PDF from HTML content
+   */
+  async generatePDF(html: string, options: PDFGeneratorOptions = {}): Promise<Buffer | string> {
+    const startTime = Date.now();
+    let page: Page | null = null;
+
+    try {
+      // Ensure browser is initialized
+      await this.initBrowser();
+
+      if (!this.browser) {
+        throw new Error('Browser not initialized');
+      }
+
+      // Create a new page
+      page = await this.browser.newPage();
+
+      // Set viewport for consistent rendering
+      await page.setViewport({
+        width: 1200,
+        height: 1600,
+        deviceScaleFactor: 2
+      });
+
+      // Set content with timeout
+      await page.setContent(html, {
+        waitUntil: ['networkidle0', 'domcontentloaded'],
+        timeout: 30000
+      });
+
+      // Wait for any async content to load
+      await page.evaluateHandle('document.fonts.ready');
+
+      // Configure PDF options
+      const pdfOptions: PDFOptions = {
+        ...this.defaultOptions,
+        displayHeaderFooter: options.displayHeaderFooter ?? this.defaultOptions.displayHeaderFooter,
+        headerTemplate: options.headerTemplate ?? this.defaultOptions.headerTemplate,
+        footerTemplate: options.footerTemplate ?? this.defaultOptions.footerTemplate,
+        margin: {
+          ...this.defaultOptions.margin,
+          ...options.margin
+        }
+      };
+
+      // Add metadata if provided
+      if (options.metadata) {
+        // Note: Puppeteer doesn't directly support PDF metadata
+        // We'll add it through PDF post-processing if needed
+        await page.evaluateHandle((metadata) => {
+          // Set document title for PDF
+          if (metadata.title) {
+            document.title = metadata.title;
+          }
+        }, options.metadata);
+      }
+
+      // Generate PDF
+      const pdfBuffer = await page.pdf(pdfOptions);
+
+      // Close the page
+      await page.close();
+      page = null;
+
+      const generationTime = Date.now() - startTime;
+      logger.info(`PDF generated successfully in ${generationTime}ms, size: ${pdfBuffer.length} bytes`);
+
+      // Handle output options
+      if (options.outputPath) {
+        // Ensure directory exists
+        const dir = path.dirname(options.outputPath);
+        await fs.mkdir(dir, { recursive: true });
+
+        // Write to file
+        await fs.writeFile(options.outputPath, pdfBuffer);
+        logger.info(`PDF saved to: ${options.outputPath}`);
+
+        return options.returnBuffer ? pdfBuffer : options.outputPath;
+      }
+
+      return pdfBuffer;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('PDF generation failed:', { error: errorMessage, time: Date.now() - startTime });
+      
+      // Clean up on error
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError) {
+          logger.error('Failed to close page after error:', closeError);
+        }
+      }
+
+      throw new Error(`PDF generation failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Generate PDF from URL
+   */
+  async generatePDFFromURL(url: string, options: PDFGeneratorOptions = {}): Promise<Buffer | string> {
+    const startTime = Date.now();
+    let page: Page | null = null;
+
+    try {
+      // Ensure browser is initialized
+      await this.initBrowser();
+
+      if (!this.browser) {
+        throw new Error('Browser not initialized');
+      }
+
+      // Create a new page
+      page = await this.browser.newPage();
+
+      // Set viewport
+      await page.setViewport({
+        width: 1200,
+        height: 1600,
+        deviceScaleFactor: 2
+      });
+
+      // Navigate to URL with timeout
+      await page.goto(url, {
+        waitUntil: ['networkidle0', 'domcontentloaded'],
+        timeout: 30000
+      });
+
+      // Wait for fonts to load
+      await page.evaluateHandle('document.fonts.ready');
+
+      // Configure PDF options
+      const pdfOptions: PDFOptions = {
+        ...this.defaultOptions,
+        displayHeaderFooter: options.displayHeaderFooter ?? this.defaultOptions.displayHeaderFooter,
+        headerTemplate: options.headerTemplate ?? this.defaultOptions.headerTemplate,
+        footerTemplate: options.footerTemplate ?? this.defaultOptions.footerTemplate,
+        margin: {
+          ...this.defaultOptions.margin,
+          ...options.margin
+        }
+      };
+
+      // Generate PDF
+      const pdfBuffer = await page.pdf(pdfOptions);
+
+      // Close the page
+      await page.close();
+      page = null;
+
+      const generationTime = Date.now() - startTime;
+      logger.info(`PDF generated from URL in ${generationTime}ms, size: ${pdfBuffer.length} bytes`);
+
+      // Handle output options
+      if (options.outputPath) {
+        const dir = path.dirname(options.outputPath);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(options.outputPath, pdfBuffer);
+        logger.info(`PDF saved to: ${options.outputPath}`);
+
+        return options.returnBuffer ? pdfBuffer : options.outputPath;
+      }
+
+      return pdfBuffer;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('PDF generation from URL failed:', { error: errorMessage, url, time: Date.now() - startTime });
+      
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError) {
+          logger.error('Failed to close page after error:', closeError);
+        }
+      }
+
+      throw new Error(`PDF generation from URL failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Generate multiple PDFs in batch
+   */
+  async generateBatchPDFs(
+    items: Array<{ html: string; outputPath?: string }>,
+    options: Omit<PDFGeneratorOptions, 'outputPath' | 'returnBuffer'> = {}
+  ): Promise<Array<{ success: boolean; result?: Buffer | string; error?: string }>> {
+    const results: Array<{ success: boolean; result?: Buffer | string; error?: string }> = [];
+
+    for (const item of items) {
+      try {
+        const result = await this.generatePDF(item.html, {
+          ...options,
+          outputPath: item.outputPath,
+          returnBuffer: !item.outputPath
+        });
+        results.push({ success: true, result });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        results.push({ success: false, error: errorMessage });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Optimize PDF for size by adjusting quality settings
+   */
+  async generateOptimizedPDF(html: string, options: PDFGeneratorOptions = {}): Promise<Buffer | string> {
+    const optimizedOptions: PDFGeneratorOptions = {
+      ...options,
+      margin: options.margin || {
+        top: '15mm',
+        bottom: '15mm',
+        left: '10mm',
+        right: '10mm'
+      }
+    };
+
+    let page: Page | null = null;
+
+    try {
+      await this.initBrowser();
+
+      if (!this.browser) {
+        throw new Error('Browser not initialized');
+      }
+
+      page = await this.browser.newPage();
+
+      // Set smaller viewport for optimization
+      await page.setViewport({
+        width: 800,
+        height: 1100,
+        deviceScaleFactor: 1
+      });
+
+      // Inject CSS for optimization
+      await page.setContent(html, {
+        waitUntil: ['networkidle0', 'domcontentloaded'],
+        timeout: 30000
+      });
+
+      // Optimize images
+      await page.evaluate(() => {
+        const images = document.querySelectorAll('img');
+        images.forEach((img) => {
+          // Set max dimensions for images
+          if (img.naturalWidth > 800) {
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+          }
+        });
+      });
+
+      const pdfOptions: PDFOptions = {
+        ...this.defaultOptions,
+        ...optimizedOptions,
+        preferCSSPageSize: true,
+        scale: 0.9 // Slightly reduce scale for smaller file size
+      };
+
+      const pdfBuffer = await page.pdf(pdfOptions);
+      
+      await page.close();
+      page = null;
+
+      logger.info(`Optimized PDF generated, size: ${pdfBuffer.length} bytes`);
+
+      if (options.outputPath) {
+        const dir = path.dirname(options.outputPath);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(options.outputPath, pdfBuffer);
+        return options.returnBuffer ? pdfBuffer : options.outputPath;
+      }
+
+      return pdfBuffer;
+    } catch (error) {
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError) {
+          logger.error('Failed to close page after error:', closeError);
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Create report-specific PDF with custom styling
+   */
+  async generateReportPDF(
+    reportHTML: string,
+    reportType: string,
+    options: PDFGeneratorOptions = {}
+  ): Promise<Buffer | string> {
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const customOptions: PDFGeneratorOptions = {
+      ...options,
+      displayHeaderFooter: true,
+      headerTemplate: options.headerTemplate || `
+        <div style="font-size: 10px; width: 100%; display: flex; justify-content: space-between; padding: 0 15mm;">
+          <span>${reportType} Report</span>
+          <span>${currentDate}</span>
+        </div>
+      `,
+      footerTemplate: options.footerTemplate || `
+        <div style="font-size: 10px; width: 100%; display: flex; justify-content: space-between; padding: 0 15mm;">
+          <span>ContractGuard</span>
+          <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+          <span>Confidential</span>
+        </div>
+      `,
+      metadata: {
+        title: `${reportType} Report - ${currentDate}`,
+        author: 'ContractGuard',
+        subject: `${reportType} Analysis Report`,
+        creator: 'ContractGuard PDF Generator',
+        producer: 'Puppeteer',
+        ...options.metadata
+      }
+    };
+
+    // Wrap HTML with report styling
+    const styledHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${customOptions.metadata?.title || 'Report'}</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 0;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 20mm 15mm;
+          }
+          h1, h2, h3 {
+            color: #2c3e50;
+            page-break-after: avoid;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+            page-break-inside: avoid;
+          }
+          th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+          }
+          th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+          }
+          .page-break {
+            page-break-after: always;
+          }
+          .no-break {
+            page-break-inside: avoid;
+          }
+          @media print {
+            body {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        ${reportHTML}
+      </body>
+      </html>
+    `;
+
+    return this.generatePDF(styledHTML, customOptions);
+  }
+}
+
+// Export singleton instance
+export const pdfGenerator = new PDFGeneratorService();
+
+// Export types
+export type { PDFGeneratorOptions };

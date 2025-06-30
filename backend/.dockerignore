@@ -1,0 +1,72 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Development files
+src
+*.ts
+!*.d.ts
+tsconfig.json
+nodemon.json
+
+# Testing
+tests
+coverage
+jest.config.js
+test-*
+
+# Documentation
+*.md
+!README.md
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Git
+.git
+.gitignore
+
+# Build artifacts (keep dist for production)
+# dist (commented out since we need it for production build)

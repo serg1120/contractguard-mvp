@@ -1,0 +1,213 @@
+name: Project Health Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run health checks daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  dependency-check:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Backend dependency audit
+      working-directory: ./backend
+      run: |
+        npm ci
+        npm audit --audit-level=moderate
+
+    - name: Frontend dependency audit
+      working-directory: ./frontend
+      run: |
+        npm ci
+        npm audit --audit-level=moderate
+
+    - name: Check for outdated dependencies
+      run: |
+        echo "## Backend Dependencies" >> $GITHUB_STEP_SUMMARY
+        cd backend && npm outdated >> $GITHUB_STEP_SUMMARY || true
+        echo "## Frontend Dependencies" >> $GITHUB_STEP_SUMMARY
+        cd ../frontend && npm outdated >> $GITHUB_STEP_SUMMARY || true
+
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  docker-security:
+    name: Docker Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build backend image for scanning
+      run: docker build -t contractguard-backend:scan ./backend
+
+    - name: Build frontend image for scanning
+      run: docker build -t contractguard-frontend:scan ./frontend
+
+    - name: Scan backend image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'contractguard-backend:scan'
+        format: 'table'
+        exit-code: '1'
+        ignore-unfixed: true
+        severity: 'CRITICAL,HIGH'
+
+    - name: Scan frontend image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'contractguard-frontend:scan'
+        format: 'table'
+        exit-code: '1'
+        ignore-unfixed: true
+        severity: 'CRITICAL,HIGH'
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: contractguard_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Start services with Docker Compose
+      run: |
+        cp backend/.env.example backend/.env
+        sed -i 's/your-super-secret-jwt-key-here-make-it-long-and-random/test-jwt-secret-key-for-integration-testing/' backend/.env
+        sed -i 's/your-openai-api-key-here/sk-test-key-for-integration-testing/' backend/.env
+        sed -i 's/postgresql:\/\/username:password@localhost:5432\/contractguard/postgresql:\/\/test_user:test_password@localhost:5432\/contractguard_test/' backend/.env
+        docker-compose up -d --build
+
+    - name: Wait for services to be ready
+      run: |
+        timeout 60s bash -c 'until curl -f http://localhost:5000/api/health; do sleep 2; done'
+        timeout 60s bash -c 'until curl -f http://localhost:3000/health; do sleep 2; done'
+
+    - name: Run integration tests
+      working-directory: ./backend
+      run: npm run test:integration
+      env:
+        API_URL: http://localhost:5000
+        FRONTEND_URL: http://localhost:3000
+
+    - name: Stop services
+      run: docker-compose down
+
+  performance-test:
+    name: Performance Baseline
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install k6
+      run: |
+        sudo gpg -k
+        sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+
+    - name: Run performance tests
+      run: |
+        k6 run --out json=performance-results.json performance-tests/load-test.js
+      env:
+        API_URL: ${{ secrets.PRODUCTION_API_URL }}
+
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: performance-results.json
+
+  health-summary:
+    name: Health Summary
+    runs-on: ubuntu-latest
+    needs: [dependency-check, code-quality, docker-security, integration-test]
+    if: always()
+    
+    steps:
+    - name: Generate health report
+      run: |
+        echo "# Project Health Report" >> $GITHUB_STEP_SUMMARY
+        echo "Date: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ needs.dependency-check.result }}" == "success" ]; then
+          echo "✅ Dependencies: PASS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Dependencies: FAIL" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.code-quality.result }}" == "success" ]; then
+          echo "✅ Code Quality: PASS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Code Quality: CHECK" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.docker-security.result }}" == "success" ]; then
+          echo "✅ Docker Security: PASS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Docker Security: FAIL" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.integration-test.result }}" == "success" ]; then
+          echo "✅ Integration Tests: PASS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Integration Tests: FAIL" >> $GITHUB_STEP_SUMMARY
+        fi
